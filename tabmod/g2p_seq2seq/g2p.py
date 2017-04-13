@@ -164,7 +164,8 @@ class G2PModel(object):
                                             self.params.learning_rate,
                                             self.params.lr_decay_factor,
                                             forward_only=False,
-                                            optimizer=self.params.optimizer)
+                                            optimizer=self.params.optimizer,
+                                            dropout_keep_rate=self.params.dropout_keep_rate)
     self.model.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
 
 
@@ -458,6 +459,7 @@ class TrainingParams(object):
       self.steps_per_checkpoint = flags.steps_per_checkpoint
       self.max_steps = flags.max_steps
       self.optimizer = flags.optimizer
+      self.dropout_keep_rate = flags.dropout_keep_rate
     else:
       self.learning_rate = 0.5
       self.lr_decay_factor = 0.99
@@ -468,10 +470,12 @@ class TrainingParams(object):
       self.steps_per_checkpoint = 200
       self.max_steps = 0
       self.optimizer = "sgd"
+      self.dropout_keep_rate = 1.0
 
   def __str__(self):
     return ("Learning rate:        {}\n"
             "LR decay factor:      {}\n"
+            "Dropout keep rate:    {}\n"
             "Max gradient norm:    {}\n"
             "Batch size:           {}\n"
             "Size of layer:        {}\n"
@@ -479,12 +483,13 @@ class TrainingParams(object):
             "Steps per checkpoint: {}\n"
             "Max steps:            {}\n"
             "Optimizer:            {}\n").format(
-      self.learning_rate,
-      self.lr_decay_factor,
-      self.max_gradient_norm,
-      self.batch_size,
-      self.size,
-      self.num_layers,
-      self.steps_per_checkpoint,
-      self.max_steps,
-      self.optimizer)
+              self.learning_rate,
+              self.lr_decay_factor,
+              self.dropout_keep_rate,
+              self.max_gradient_norm,
+              self.batch_size,
+              self.size,
+              self.num_layers,
+              self.steps_per_checkpoint,
+              self.max_steps,
+              self.optimizer)

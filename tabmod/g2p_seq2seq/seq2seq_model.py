@@ -59,7 +59,8 @@ class Seq2SeqModel(object):
                num_samples=512,
                forward_only=False,
                optimizer="sgd",
-               dtype=tf.float32):
+               dtype=tf.float32,
+               dropout_keep_rate=1.0):
     """Create the model.
 
     Args:
@@ -82,6 +83,7 @@ class Seq2SeqModel(object):
       num_samples: number of samples for sampled softmax.
       forward_only: if set, we do not construct the backward pass in the model.
       dtype: the data type to use to store internal variables.
+      dropout_keep_rate: probability of not dropping out
     """
     self.source_vocab_size = source_vocab_size
     self.target_vocab_size = target_vocab_size
@@ -93,6 +95,7 @@ class Seq2SeqModel(object):
         self.learning_rate * learning_rate_decay_factor)
     self.global_step = tf.Variable(0, trainable=False)
     self.optimizer = optimizer
+    self.dropout_keep_rate=dropout_keep_rate
 
     # If we use sampled softmax, we need an output projection.
     output_projection = None
@@ -132,7 +135,7 @@ class Seq2SeqModel(object):
     single_cell = tf.contrib.rnn.core_rnn_cell.GRUCell(size)
     if use_lstm:
       single_cell = tf.contrib.rnn.core_rnn_cell.BasicLSTMCell(size)
-    cell = single_cell
+    cell = tf.contrib.rnn.DropoutWrapper(single_cell, input_keep_prob=self.dropout_keep_rate, output_keep_prob=self.dropout_keep_rate)
     if num_layers > 1:
       cell = tf.contrib.rnn.core_rnn_cell.MultiRNNCell([single_cell] *
                                                        num_layers)
@@ -265,7 +268,6 @@ class Seq2SeqModel(object):
       output_feed = [self.losses[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
-
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
       return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.

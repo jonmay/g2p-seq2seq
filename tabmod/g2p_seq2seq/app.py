@@ -43,6 +43,7 @@ tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.99,
                           "Learning rate decays by this much.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
+tf.app.flags.DEFINE_float("dropout_keep_rate", 1.0, "probability of not dropping out.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("size", 64, "Size of each model layer.")
