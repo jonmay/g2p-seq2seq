@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import os
 import codecs
+import numpy as np
 from tensorflow.python.platform import gfile
 
 # Special vocabulary symbols - we always put them at the start.
@@ -151,7 +152,7 @@ def symbols_to_ids(symbols, vocab):
   return ids
 
 
-def split_to_grapheme_phoneme(inp_dictionary, graphchar=True, phonchar=False):
+def split_to_grapheme_phoneme(inp_dictionary, graphchar=True, phonchar=False, logcount=False):
   """Split input dictionary into two separate lists with graphemes and phonemes.
 
   Args:
@@ -166,10 +167,14 @@ def split_to_grapheme_phoneme(inp_dictionary, graphchar=True, phonchar=False):
     if len(split_line) > 1:
       count = 1
       if len(split_line) > 2:
-        count = int(float(split_line[2]))
+        val = float(split_line[2])
+        if logcount:
+          val = np.log2(val)
+        count = int(val)
       for c in range(count):
         graphemes.append(graphs)
         phonemes.append(phons)
+  print("{} entries".format(len(graphemes)))
   return graphemes, phonemes
 
 
@@ -216,7 +221,7 @@ def split_dictionary(train_path, valid_path=None, test_path=None):
   return train_dic, valid_dic, test_dic
 
 
-def prepare_g2p_data(model_dir, train_path, valid_path, test_path, c2c=False):
+def prepare_g2p_data(model_dir, train_path, valid_path, test_path, c2c=False, logcount=False):
   """Create vocabularies into model_dir, create ids data lists.
 
   Args:
@@ -239,7 +244,7 @@ def prepare_g2p_data(model_dir, train_path, valid_path, test_path, c2c=False):
                                                     test_path)
   # Split dictionaries into two separate lists with graphemes and phonemes.
   # if 'c2c mode', phonemes are split into characters as well
-  train_gr, train_ph = split_to_grapheme_phoneme(train_dic, phonchar=c2c)
+  train_gr, train_ph = split_to_grapheme_phoneme(train_dic, phonchar=c2c, logcount=logcount)
   valid_gr, valid_ph = split_to_grapheme_phoneme(valid_dic, phonchar=c2c)
 
   # Load/Create vocabularies.

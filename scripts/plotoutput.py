@@ -71,7 +71,9 @@ def main():
   infiles = [prepfile(x, 'r') for x in args.infile]
   #plt.subplot(211)
   colors = cycle(plt.cm.Set1(np.linspace(0,1,9)))
-#  colors = cycle(mpl.colors.CSS4_COLORS.keys())
+
+  plt.yscale('log')
+  plt.xscale('log')
   for infile, color in zip(infiles, colors):
     xs = []
     tys = []
@@ -104,11 +106,11 @@ def main():
           sys.stderr.write("Bad line: {}".format(line))
           continue
     if len(xs) == len(tys):
-      plt.plot(xs, tys, color=color, linestyle='-', label=infile.name+" train")
+      plt.plot(xs, tys, color=color, lw=0.15, linestyle='-', label=infile.name+" train")
     else:
       sys.stderr.write("Can't plot {}; mismatch\n".format(infile.name+" train"))
     if len(xs) == len(dys):
-      plt.plot(xs, dys, color=color, linestyle='--')
+      plt.plot(xs, dys, color=color, lw=0.15, linestyle='--')
     else:
       sys.stderr.write("Can't plot {}; mismatch {} != {}\n".format(infile.name+" dev", len(xs), len(dys)))
   if args.legend:

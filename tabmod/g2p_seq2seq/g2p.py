@@ -129,14 +129,14 @@ class G2PModel(object):
     return data_set
 
 
-  def prepare_data(self, train_path, valid_path, test_path, c2c):
+  def prepare_data(self, train_path, valid_path, test_path, c2c, logcount):
     """Prepare train/validation/test sets. Create or load vocabularies."""
     # Prepare data.
     print("Preparing G2P data")
     train_gr_ids, train_ph_ids, valid_gr_ids, valid_ph_ids, self.gr_vocab,\
     self.ph_vocab, self.test_lines =\
     data_utils.prepare_g2p_data(self.model_dir, train_path, valid_path,
-                                test_path, c2c=c2c)
+                                test_path, c2c=c2c, logcount=logcount)
     # Read data into buckets and compute their sizes.
     print ("Reading development and training data.")
     self.valid_set = self.__put_into_buckets(valid_gr_ids, valid_ph_ids)
@@ -352,9 +352,13 @@ class G2PModel(object):
     bucket_id = min([b for b in xrange(len(self._BUCKETS))
                      if self._BUCKETS[b][0] > len(token_ids)])
     # Get a 1-element batch to feed the word to the model.
+    # JM: what is this and why is it needed in decoding??
     encoder_inputs, decoder_inputs, target_weights = self.model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id)
     # Get output logits for the word.
+    # JM: for ensembling, this is where we would simultaneously run the models
+    # JM: however, need to proceed based on decision! Is this doing the
+    # right thing??
     _, _, output_logits = self.model.step(self.session, encoder_inputs,
                                           decoder_inputs, target_weights,
                                           bucket_id, True)

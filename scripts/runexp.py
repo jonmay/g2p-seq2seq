@@ -49,6 +49,8 @@ def main():
   addonoffarg(parser, 'debug', help="debug mode", default=False)
   parser.add_argument("--infile", "-i", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="input file of tab-sep modelname, args")
   parser.add_argument("--lang", "-l", type=str, help="iso 639-3 language code")
+  parser.add_argument("--qsubargs", "-q", type=str, default="", help="arguments to qsub that override defaults")
+  parser.add_argument("--prefix", "-p", type=str, default=None, help="prefix for every model")
   parser.add_argument("--script", type=str, default=os.path.join(scriptdir, "g2poov.sh"), help="command we're running")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="output file with job id paired onto lang, name, model, args")
 
@@ -71,7 +73,8 @@ def main():
 
   for line in infile:
     model, arguments = line.strip().split('\t')
-    cmd="qsubrun -N \"{1}_{2}\" -- {0} {1} {2} \"{3}\"".format(args.script, args.lang, model, arguments)
+    model = "{}{}".format(args.prefix,model) if args.prefix is not None else model
+    cmd="qsubrun -N \"{1}_{2}\" {4} -- {0} {1} {2} \"{3}\"".format(args.script, args.lang, model, arguments, args.qsubargs)
     jobid=check_output(shlex.split(cmd))
     outfile.write("{}\t{}\t{}\t{}\t{}\n".format(jobid, args.lang, model, arguments, cmd))
 

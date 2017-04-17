@@ -61,6 +61,7 @@ tf.app.flags.DEFINE_string("output", "", "Decoding result file.")
 tf.app.flags.DEFINE_string("train", "", "Train dictionary.")
 tf.app.flags.DEFINE_string("valid", "", "Development dictionary.")
 tf.app.flags.DEFINE_string("test", "", "Test dictionary.")
+tf.app.flags.DEFINE_boolean("logcount", False, "use log count instead of plain counts")
 tf.app.flags.DEFINE_integer("max_steps", 0,
                             "How many training steps to do until stop training"
                             " (0: no limit).")
@@ -79,7 +80,7 @@ def main(_=[]):
     g2p_model = G2PModel(FLAGS.model)
     if FLAGS.train:
       g2p_params = TrainingParams(FLAGS)
-      g2p_model.prepare_data(FLAGS.train, FLAGS.valid, FLAGS.test, FLAGS.c2c)
+      g2p_model.prepare_data(FLAGS.train, FLAGS.valid, FLAGS.test, FLAGS.c2c, FLAGS.logcount)
       if (not os.path.exists(os.path.join(FLAGS.model,
                                           "model.data-00000-of-00001"))
           or FLAGS.reinit):
