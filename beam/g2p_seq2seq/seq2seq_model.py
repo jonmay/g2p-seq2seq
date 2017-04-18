@@ -139,7 +139,6 @@ class Seq2SeqModel(object):
     if num_layers > 1:
       cell = tf.contrib.rnn.core_rnn_cell.MultiRNNCell([single_cell] *
                                                        num_layers)
-
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
       return tf.contrib.legacy_seq2seq.embedding_attention_seq2seq(
@@ -170,12 +169,13 @@ class Seq2SeqModel(object):
     targets = [self.decoder_inputs[i + 1]
                for i in xrange(len(self.decoder_inputs) - 1)]
 
+    self.automatic = tf.placeholder(tf.bool)
     # Training outputs and losses.
     if forward_only:
       # JM:: this would have to be replaced with manual steps for beam decoding
       self.outputs, self.losses = tf.contrib.legacy_seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
-          self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
+          self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, self.automatic),
           softmax_loss_function=softmax_loss_function)
       # If we use output projection, we need to project outputs for decoding.
       if output_projection is not None:
@@ -190,7 +190,10 @@ class Seq2SeqModel(object):
           self.target_weights, buckets,
           lambda x, y: seq2seq_f(x, y, False),
           softmax_loss_function=softmax_loss_function)
-
+#    print(len(self.outputs))
+#    for output in self.outputs:
+#      print(output.shape)
+    self.sfoutputs = [[tf.nn.softmax(y) for y in x] for x in self.outputs]
     # Gradients and SGD update operation for training the model.
     params = tf.trainable_variables()
     if not forward_only:
@@ -215,7 +218,7 @@ class Seq2SeqModel(object):
     self.saver = tf.train.Saver(tf.global_variables())
 
   def step(self, session, encoder_inputs, decoder_inputs, target_weights,
-           bucket_id, forward_only):
+           bucket_id, forward_only, automatic=True):
     """Run a step of the model feeding the given inputs.
 
     Args:
@@ -249,6 +252,7 @@ class Seq2SeqModel(object):
 
     # Input feed: encoder inputs, decoder inputs, target_weights, as provided.
     input_feed = {}
+    input_feed[self.automatic]=automatic
     for l in xrange(encoder_size):
       input_feed[self.encoder_inputs[l].name] = encoder_inputs[l]
     for l in xrange(decoder_size):
@@ -268,7 +272,7 @@ class Seq2SeqModel(object):
     else:
       output_feed = [self.losses[bucket_id]]  # Loss for this batch.
       for l in xrange(decoder_size):  # Output logits.
-        output_feed.append(self.outputs[bucket_id][l])
+        output_feed.append(self.sfoutputs[bucket_id][l])
     outputs = session.run(output_feed, input_feed)
     if not forward_only:
       return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
@@ -276,7 +280,7 @@ class Seq2SeqModel(object):
       return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
 
 
-  def get_batch(self, data, bucket_id):
+  def get_batch(self, data, bucket_id, copies=0):
     """Get a random batch of data from the specified bucket, prepare for step.
 
     To feed data in step(..) it must be a list of batch-major vectors, while
@@ -297,7 +301,7 @@ class Seq2SeqModel(object):
 
     # Get a random batch of encoder and decoder inputs from data,
     # pad them if needed, reverse encoder inputs and add GO to decoder.
-    for _ in xrange(self.batch_size):
+    for _ in xrange(self.batch_size if copies==0 else copies):
       encoder_input, decoder_input = random.choice(data[bucket_id])
 
       # Encoder inputs are padded and then reversed.

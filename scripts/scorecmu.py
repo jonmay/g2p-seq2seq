@@ -86,6 +86,7 @@ def main():
   parser.add_argument("--reffile", "-r", nargs='?', type=argparse.FileType('r'), default=sys.stdin, help="input reference file (tab separated alternatives)")
   parser.add_argument("--outfile", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="output file")
   addonoffarg(parser, 'perline', help="show per line stats", default=False)
+  addonoffarg(parser, 'crhs', help="assume per-character rhs", default=False)
 
   workdir = tempfile.mkdtemp(prefix=os.path.basename(__file__), dir=os.getenv('TMPDIR', '/tmp'))
 
@@ -114,9 +115,9 @@ def main():
   for ln, (srcline, inline, refline) in enumerate(zip(srcfile, infile, reffile)):
     srcstring = srcline.strip()
     instring = inline.strip()
-    inwords = instring.split()
+    inwords = list(instring) if args.crhs else instring.split()
     refstrings = refline.strip().split('\t')
-    refwords = [x.split() for x in refstrings]
+    refwords = [list(x) if args.crhs else x.split() for x in refstrings]
     wd = 1.
     wn = wer(instring, refstrings)
     pn, pd = per(inwords, refwords)
