@@ -330,7 +330,7 @@ class G2PModel(object):
     return eval_loss
 
 
-  def decode_word(self, word, c2c=False, model2=None):
+  def decode_word(self, word, c2c=False, aux=None):
     """Decode input word to sequence of phonemes.
 
     Args:
@@ -345,14 +345,14 @@ class G2PModel(object):
       print("Symbols '%s' are not in vocabulary" % "','".join(gr_absent).encode('utf-8'))
       return ""
 
-    if model2 is not None:
-      gr2 = [gr for gr in word if gr not in model2.gr_vocab]
+    for auxm in aux:
+      gr2 = [gr for gr in word if gr not in auxm.gr_vocab]
       if gr2 != gr_absent:
         print("Mismatch between model grs: {} vs {}".format(gr_absent, gr2))
     # Get token-ids for the input word.
     token_ids = [self.gr_vocab.get(s, data_utils.UNK_ID) for s in word]
-    if model2 is not None:
-      ti2 = [model2.gr_vocab.get(s, data_utils.UNK_ID) for s in word]
+    for auxm in aux:
+      ti2 = [auxm.gr_vocab.get(s, data_utils.UNK_ID) for s in word]
       if ti2 != token_ids:
         print("Mismatch between token ids: {} vs {}".format(token_ids, ti2))
     # shrink if too long (and yell)
@@ -381,7 +381,7 @@ class G2PModel(object):
     #print(dbglogit[:10])
 #    print("{} -> {}".format(dbglogit[:10], [self.rev_ph_vocab[int(x)] for x in dbglogit[:10]]))
     #print(int(np.argmax(dbglogit[:10])))
-    print("{} -> {}".format(int(np.argmax(dbglogit)), self.rev_ph_vocab[int(np.argmax(dbglogit))]))
+    print("{} -> {} -> {}".format(np.max(dbglogit), int(np.argmax(dbglogit)), self.rev_ph_vocab[int(np.argmax(dbglogit))]))
   
     # This is a greedy decoder - outputs are just argmaxes of output_logits.
     outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
@@ -396,30 +396,44 @@ class G2PModel(object):
     # print("ei2 = {}\ndi2 = {}\ntw2 = {}".format(ei2, di2, tw2))
     for pos in range(len(encoder_inputs)):
       print("At position {}".format(pos))
+      # concatenate all output_logits and get the mean
+      logitstack = []
       _, _, output_logits = self.model.step(self.session, encoder_inputs,
                                             decoder_inputs, target_weights,
                                             bucket_id, True, automatic=False)
-      # TODO: get softmax so i have a probability
-      maxval = np.max(output_logits[pos])
-      oid = int(np.argmax(output_logits[pos]))
+      print(output_logits[pos].shape)
+      print(output_logits[pos][0][:10])
+      logitstack.append(output_logits[pos])
+      for auxm in aux:
+        _, _, m2_output_logits = auxm.model.step(auxm.session, encoder_inputs,
+                                                 decoder_inputs, target_weights,
+                                                 bucket_id, True, automatic=False)
+        print(m2_output_logits[pos][0][:10])
+        logitstack.append(m2_output_logits[pos])
+      logits = np.mean(np.array(logitstack), axis=0)
+      print(logits.shape)
+      print(logits[0][:10])
+
+      maxval = np.max(logits)
+      oid = int(np.argmax(logits))
       ochar = self.rev_ph_vocab[oid]
       print("{} = {} -> {} = {}".format(pos, maxval, oid, ochar))
-      runnersup = np.argpartition(output_logits[pos][0], -4)[-4:]
+      runnersup = np.argpartition(logits[0], -4)[-4:]
       print(runnersup)
-      for x, y in sorted(zip(runnersup, output_logits[pos][0][runnersup]), key=lambda i: i[1], reverse=True):
+      for x, y in sorted(zip(runnersup, logits[0][runnersup]), key=lambda i: i[1], reverse=True):
         print("  {} -> {} = {}".format(y, x, self.rev_ph_vocab[x].encode("utf-8")))
-      if model2 is not None:
-        _, _, m2_output_logits = model2.model.step(model2.session, encoder_inputs,
-                                                   decoder_inputs, target_weights,
-                                                   bucket_id, True, automatic=False)
-        m2_maxval = np.max(m2_output_logits[pos])
-        m2_oid = int(np.argmax(m2_output_logits[pos]))
-        m2_ochar = model2.rev_ph_vocab[m2_oid]
-        print("m2: {} = {} -> {} = {}".format(pos, m2_maxval, m2_oid, m2_ochar))
-        runnersup = np.argpartition(m2_output_logits[pos][0], -4)[-4:]
-        print(runnersup)
-        for x, y in sorted(zip(runnersup, m2_output_logits[pos][0][runnersup]), key=lambda i: i[1], reverse=True):
-          print("  m2: {} -> {} = {}".format(y, x, model2.rev_ph_vocab[x].encode("utf-8")))
+      # for mn, auxm in enumerate(aux):
+      #   _, _, m2_output_logits = auxm.model.step(auxm.session, encoder_inputs,
+      #                                            decoder_inputs, target_weights,
+      #                                            bucket_id, True, automatic=False)
+      #   m2_maxval = np.max(m2_output_logits[pos])
+      #   m2_oid = int(np.argmax(m2_output_logits[pos]))
+      #   m2_ochar = auxm.rev_ph_vocab[m2_oid]
+      #   print("m{}: {} = {} -> {} = {}".format(mn, pos, m2_maxval, m2_oid, m2_ochar))
+      #   runnersup = np.argpartition(m2_output_logits[pos][0], -4)[-4:]
+      #   print(runnersup)
+      #   for x, y in sorted(zip(runnersup, m2_output_logits[pos][0][runnersup]), key=lambda i: i[1], reverse=True):
+      #     print("  m{}: {} -> {} = {}".format(mn, y, x, auxm.rev_ph_vocab[x].encode("utf-8")))
         
       if oid == data_utils.EOS_ID:
         print("Found EOS at {}".format(pos))
@@ -434,7 +448,9 @@ class G2PModel(object):
 
     # Phoneme sequence corresponding to outputs.
     joiner = "" if c2c else " "
-    return joiner.join([self.rev_ph_vocab[output] for output in outputs])
+    retval = joiner.join([self.rev_ph_vocab[output] for output in outputs])
+    print("single model is {}".format(retval))
+    return retval
 
 
   def interactive(self, c2c=False):
@@ -486,7 +502,7 @@ class G2PModel(object):
     print("Accuracy: %.3f" % float(1-(errors/len(test_dic))))
 
 
-  def decode(self, decode_lines, output_file=None, c2c=False, model2=None):
+  def decode(self, decode_lines, output_file=None, c2c=False, aux=[]):
     """Decode words from file.
 
     Returns:
@@ -499,7 +515,7 @@ class G2PModel(object):
     if output_file:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, model2=model2)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux)
         output_file.write(word)
         output_file.write('\t')
         output_file.write(phonemes)
@@ -509,7 +525,7 @@ class G2PModel(object):
     else:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, model2=model2)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux)
         print(word + '\t' + phonemes)
         phoneme_lines.append(phonemes)
     return phoneme_lines

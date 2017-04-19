@@ -96,7 +96,8 @@ def main(_=[]):
       g2p_model.load_decode_model(scope="mainmodel")
       aux_models = []
       for mn, m in enumerate(g2p_models[1:]):
-        aux_models.append(m.load_decode_model(scope="aux{}".format(mn)))
+        m.load_decode_model(scope="aux{}".format(mn))
+        aux_models.append(m)
       if len(FLAGS.decode) > 0:
         decode_lines = codecs.open(FLAGS.decode, "r", "utf-8").readlines()
         output_file = None
