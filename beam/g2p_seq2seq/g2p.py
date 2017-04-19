@@ -363,65 +363,34 @@ class G2PModel(object):
     # Which bucket does it belong to?
     bucket_id = min([b for b in xrange(len(self._BUCKETS))
                      if self._BUCKETS[b][0] > len(token_ids)])
-    #print("tokens {}".format(token_ids))
-    #print("bucket {}".format(bucket_id))
-    # Get a 1-element batch to feed the word to the model.
-    # JM: what is this and why is it needed in decoding??
     encoder_inputs, decoder_inputs, target_weights = self.model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id)
-    #print("ei = {}\ndi = {}\ntw = {}".format(encoder_inputs, decoder_inputs, target_weights))
-    # Get output logits for the word.
-    # JM: for ensembling, this is where we would simultaneously run the models
-    # JM: however, need to proceed based on decision! Is this doing the
-    # right thing??
-    _, _, output_logits = self.model.step(self.session, encoder_inputs,
-                                          decoder_inputs, target_weights,
-                                          bucket_id, True)
-    dbglogit = output_logits[0]
-    #print(dbglogit[:10])
-#    print("{} -> {}".format(dbglogit[:10], [self.rev_ph_vocab[int(x)] for x in dbglogit[:10]]))
-    #print(int(np.argmax(dbglogit[:10])))
-    print("{} -> {} -> {}".format(np.max(dbglogit), int(np.argmax(dbglogit)), self.rev_ph_vocab[int(np.argmax(dbglogit))]))
-  
-    # This is a greedy decoder - outputs are just argmaxes of output_logits.
-    outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
-    # If there is an EOS symbol in outputs, cut them at that point.
-    if data_utils.EOS_ID in outputs:
-      outputs = outputs[:outputs.index(data_utils.EOS_ID)]
 
-    # re-do it manually (later: with a beam)
-    manoutput = []
-    # ei2, di2, tw2 = self.model.get_batch(
-    #     {bucket_id: [(token_ids, [])]}, bucket_id, copies=4)
-    # print("ei2 = {}\ndi2 = {}\ntw2 = {}".format(ei2, di2, tw2))
+    output = []
     for pos in range(len(encoder_inputs)):
-      print("At position {}".format(pos))
+      #print("At position {}".format(pos))
       # concatenate all output_logits and get the mean
       logitstack = []
       _, _, output_logits = self.model.step(self.session, encoder_inputs,
                                             decoder_inputs, target_weights,
                                             bucket_id, True, automatic=False)
-      print(output_logits[pos].shape)
-      print(output_logits[pos][0][:10])
       logitstack.append(output_logits[pos])
       for auxm in aux:
         _, _, m2_output_logits = auxm.model.step(auxm.session, encoder_inputs,
                                                  decoder_inputs, target_weights,
                                                  bucket_id, True, automatic=False)
-        print(m2_output_logits[pos][0][:10])
         logitstack.append(m2_output_logits[pos])
       logits = np.mean(np.array(logitstack), axis=0)
-      print(logits.shape)
-      print(logits[0][:10])
 
       maxval = np.max(logits)
       oid = int(np.argmax(logits))
       ochar = self.rev_ph_vocab[oid]
-      print("{} = {} -> {} = {}".format(pos, maxval, oid, ochar))
-      runnersup = np.argpartition(logits[0], -4)[-4:]
-      print(runnersup)
-      for x, y in sorted(zip(runnersup, logits[0][runnersup]), key=lambda i: i[1], reverse=True):
-        print("  {} -> {} = {}".format(y, x, self.rev_ph_vocab[x].encode("utf-8")))
+
+      # For beam decoding (TODO)
+      # runnersup = np.argpartition(logits[0], -4)[-4:]
+      # print(runnersup)
+      # for x, y in sorted(zip(runnersup, logits[0][runnersup]), key=lambda i: i[1], reverse=True):
+      #   print("  {} -> {} = {}".format(y, x, self.rev_ph_vocab[x].encode("utf-8")))
       # for mn, auxm in enumerate(aux):
       #   _, _, m2_output_logits = auxm.model.step(auxm.session, encoder_inputs,
       #                                            decoder_inputs, target_weights,
@@ -436,11 +405,10 @@ class G2PModel(object):
       #     print("  m{}: {} -> {} = {}".format(mn, y, x, auxm.rev_ph_vocab[x].encode("utf-8")))
         
       if oid == data_utils.EOS_ID:
-        print("Found EOS at {}".format(pos))
         break
-      manoutput.append(ochar)
+      output.append(ochar)
       decoder_inputs[pos+1][0]=oid
-    print("got {}".format(''.join(manoutput)))
+    #print("got {}".format(''.join(manoutput)))
       # run the step with automatic = false
       # look at only the output position we are at; append the 
       # feed that into the next position in decoder_inputs
@@ -448,8 +416,8 @@ class G2PModel(object):
 
     # Phoneme sequence corresponding to outputs.
     joiner = "" if c2c else " "
-    retval = joiner.join([self.rev_ph_vocab[output] for output in outputs])
-    print("single model is {}".format(retval))
+    retval = joiner.join(output)
+    # print("single model is {}".format(retval))
     return retval
 
 
