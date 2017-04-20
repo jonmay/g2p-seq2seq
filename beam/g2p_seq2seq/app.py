@@ -86,8 +86,10 @@ def main(_=[]):
     g2p_model = g2p_models[0]
     if len(FLAGS.train) > 0:
       g2p_params = TrainingParams(FLAGS)
+      if len(g2p_models) > 1:
+        sys.stderr.write("Warning: can only train one model at a time; others will be ignored\n")
       g2p_model.prepare_data(FLAGS.train, FLAGS.valid, FLAGS.test, FLAGS.c2c, FLAGS.logcount)
-      if (not os.path.exists(os.path.join(FLAGS.model,
+      if (not os.path.exists(os.path.join(FLAGS.models[0],
                                           "model.data-00000-of-00001"))
           or FLAGS.reinit):
         g2p_model.create_train_model(g2p_params)
