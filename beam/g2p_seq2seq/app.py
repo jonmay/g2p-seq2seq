@@ -29,6 +29,7 @@ import codecs
 import tensorflow as tf
 import os.path
 import argparse
+from marisa_trie import Trie
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
 # local priority
@@ -65,6 +66,7 @@ parser.add_argument("--output", type=str, default="", help="Decoding result file
 parser.add_argument("--train", type=str, default="", help="Train dictionary.")
 parser.add_argument("--valid", type=str, default="", help="Development dictionary.")
 parser.add_argument("--test", type=str, default="", help="Test dictionary.")
+parser.add_argument("--vocab", type=str, default="", help="Limiting vocabulary for decodes.")
 addonoffarg(parser, "logcount", default=False, help="use log count instead of plain counts")
 parser.add_argument("--max_steps", type=int, default=0, help="How many training steps to do until stop training (0: no limit).")
 addonoffarg(parser, "reinit", default=False, help="Set to True for training from scratch.")
@@ -98,12 +100,15 @@ def main(_=[]):
       for mn, m in enumerate(g2p_models[1:]):
         m.load_decode_model(scope="aux{}".format(mn))
         aux_models.append(m)
+      vocab = None
+      if FLAGS.vocab:
+        vocab = Trie([x.strip() for x in codecs.open(FLAGS.vocab, "r", "utf-8").readlines()])
       if len(FLAGS.decode) > 0:
         decode_lines = codecs.open(FLAGS.decode, "r", "utf-8").readlines()
         output_file = None
         if len(FLAGS.output) > 0:
           output_file = codecs.open(FLAGS.output, "w", "utf-8")
-        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models)
+        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models, vocab=vocab)
       elif FLAGS.interactive:
         g2p_model.interactive(c2c=FLAGS.c2c)
       elif len(FLAGS.evaluate) > 0:

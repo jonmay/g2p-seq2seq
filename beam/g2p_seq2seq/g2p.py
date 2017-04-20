@@ -27,6 +27,7 @@ from __future__ import print_function
 import math
 import os
 import time
+import sys
 
 import numpy as np
 import tensorflow as tf
@@ -85,8 +86,10 @@ class G2PModel(object):
     self.rev_ph_vocab =\
       data_utils.load_vocabulary(os.path.join(self.model_dir, "vocab.phoneme"),
                                  reverse=True)
-
-    self.session = tf.Session(graph=tf.Graph())
+    # progresssive gpu memory allocation
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    self.session = tf.Session(graph=tf.Graph(), config=config)
 
     # Restore model.
     print("Creating %d layers of %d units." % (num_layers, size))
@@ -153,8 +156,9 @@ class G2PModel(object):
     """Prepare G2P model for training."""
 
     self.params = params
-
-    self.session = tf.Session()
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    self.session = tf.Session(config=config)
 
     # Prepare model.
     print("Creating model with parameters:")
@@ -330,11 +334,15 @@ class G2PModel(object):
     return eval_loss
 
 
-  def decode_word(self, word, c2c=False, aux=None):
+
+  def decode_word(self, word, c2c=False, aux=None, vocab=None):
     """Decode input word to sequence of phonemes.
 
     Args:
       word: input word;
+      c2c: is it a character-to-character model?
+      aux: other models to ensemble
+      vocab: limiting vocabulary in a marisa_trie.Trie
 
     Returns:
       phonemes: decoded phoneme sequence for input word;
@@ -367,6 +375,13 @@ class G2PModel(object):
         {bucket_id: [(token_ids, [])]}, bucket_id)
 
     output = []
+    joiner = "" if c2c else " "
+    def _allowable(outvec, cand, joiner, vocab):
+      # is the candidate allowable according to the vocab?
+      if cand == self.rev_ph_vocab[data_utils.EOS_ID]:
+        return joiner.join(outvec) in vocab
+      return len(vocab.keys(joiner.join(outvec+[cand]))) > 0
+
     for pos in range(len(encoder_inputs)):
       #print("At position {}".format(pos))
       # concatenate all output_logits and get the mean
@@ -386,6 +401,25 @@ class G2PModel(object):
       oid = int(np.argmax(logits))
       ochar = self.rev_ph_vocab[oid]
 
+      # limit word to valid words 
+      # TODO: this will be vastly improved with a beam
+      if vocab is not None:
+        vals = sorted(enumerate(logits[0]), key=lambda i: i[1], reverse=True)[1:]
+        orig_mv = maxval
+        orig_oid = oid
+        orig_ochar = ochar
+        while len(vals) > 0 and not _allowable(output, ochar, joiner, vocab):
+          maxval = vals[0][1]
+          oid = vals[0][0]
+          ochar = self.rev_ph_vocab[oid]
+          vals = vals[1:]
+        if not _allowable(output, ochar, joiner, vocab):
+          maxval = orig_mv
+          oid = orig_oid
+          ochar = orig_ochar
+          sys.stderr.write("couldn't find legitimate continuation for {}\n".format(joiner.join(output)))
+          
+
       # For beam decoding (TODO)
       # runnersup = np.argpartition(logits[0], -4)[-4:]
       # print(runnersup)
@@ -403,9 +437,9 @@ class G2PModel(object):
       #   print(runnersup)
       #   for x, y in sorted(zip(runnersup, m2_output_logits[pos][0][runnersup]), key=lambda i: i[1], reverse=True):
       #     print("  m{}: {} -> {} = {}".format(mn, y, x, auxm.rev_ph_vocab[x].encode("utf-8")))
-        
       if oid == data_utils.EOS_ID:
         break
+        
       output.append(ochar)
       decoder_inputs[pos+1][0]=oid
     #print("got {}".format(''.join(manoutput)))
@@ -415,7 +449,7 @@ class G2PModel(object):
       
 
     # Phoneme sequence corresponding to outputs.
-    joiner = "" if c2c else " "
+
     retval = joiner.join(output)
     # print("single model is {}".format(retval))
     return retval
@@ -470,7 +504,7 @@ class G2PModel(object):
     print("Accuracy: %.3f" % float(1-(errors/len(test_dic))))
 
 
-  def decode(self, decode_lines, output_file=None, c2c=False, aux=[]):
+  def decode(self, decode_lines, output_file=None, c2c=False, aux=[], vocab=None):
     """Decode words from file.
 
     Returns:
@@ -483,7 +517,7 @@ class G2PModel(object):
     if output_file:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab)
         output_file.write(word)
         output_file.write('\t')
         output_file.write(phonemes)
@@ -493,7 +527,7 @@ class G2PModel(object):
     else:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab)
         print(word + '\t' + phonemes)
         phoneme_lines.append(phonemes)
     return phoneme_lines
