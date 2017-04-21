@@ -335,7 +335,7 @@ class G2PModel(object):
 
 
 
-  def decode_word(self, word, c2c=False, aux=None, vocab=None):
+  def decode_word(self, word, c2c=False, aux=[], vocab=None):
     """Decode input word to sequence of phonemes.
 
     Args:
@@ -381,9 +381,7 @@ class G2PModel(object):
       if cand == self.rev_ph_vocab[data_utils.EOS_ID]:
         return joiner.join(outvec) in vocab
       return len(vocab.keys(joiner.join(outvec+[cand]))) > 0
-
-    for pos in range(len(encoder_inputs)):
-      #print("At position {}".format(pos))
+    for pos in range(len(decoder_inputs)):
       # concatenate all output_logits and get the mean
       logitstack = []
       _, _, output_logits = self.model.step(self.session, encoder_inputs,
@@ -439,9 +437,9 @@ class G2PModel(object):
       #     print("  m{}: {} -> {} = {}".format(mn, y, x, auxm.rev_ph_vocab[x].encode("utf-8")))
       if oid == data_utils.EOS_ID:
         break
-        
       output.append(ochar)
-      decoder_inputs[pos+1][0]=oid
+      if pos+1 < len(decoder_inputs):
+        decoder_inputs[pos+1][0]=oid
     #print("got {}".format(''.join(manoutput)))
       # run the step with automatic = false
       # look at only the output position we are at; append the 

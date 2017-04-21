@@ -35,7 +35,7 @@ source /usr/usc/cuDNN/7.5-v5.1/setup.sh
 train=$datadir/train
 dev=$datadir/dev
 test=$datadir/test
-APP=$SCRIPTDIR/../tabmod/g2p_seq2seq/app.py
+APP=$SCRIPTDIR/../beam/g2p_seq2seq/app.py
 
 vizstring=""
 for prefix in $REPS; do
