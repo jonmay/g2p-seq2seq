@@ -61,7 +61,7 @@ class G2PModel(object):
   """
   # We use a number of buckets and pad to the closest one for efficiency.
   # See seq2seq_model.Seq2SeqModel for details of how they work.
-  _BUCKETS = [(5, 10), (10, 15), (40, 50), (70, 80)]
+  _BUCKETS = [(5, 15), (10, 20), (40, 50), (70, 80)]
 
   def __init__(self, model_dir):
     """Initialize model directory."""
