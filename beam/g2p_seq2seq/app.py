@@ -62,6 +62,8 @@ addonoffarg(parser, "interactive", default=False, help="Set to True for interact
 addonoffarg(parser, "c2c", default=False, help="Set to True to assume rhs is char based too.")
 parser.add_argument("--evaluate", type=str, default="", help="Count word error rate for file.")
 parser.add_argument("--decode", type=str, default="", help="Decode file.")
+parser.add_argument("--beam", type=int, default=1, help="decoding beam")
+parser.add_argument("--beamfactor", type=int, default=1, help="beam*factor = successors to try per context; only useful when vocabulary limiting")
 parser.add_argument("--output", type=str, default="", help="Decoding result file.")
 parser.add_argument("--train", type=str, default="", help="Train dictionary.")
 parser.add_argument("--valid", type=str, default="", help="Development dictionary.")
@@ -110,7 +112,7 @@ def main(_=[]):
         output_file = None
         if len(FLAGS.output) > 0:
           output_file = codecs.open(FLAGS.output, "w", "utf-8")
-        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models, vocab=vocab)
+        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models, vocab=vocab, beam=FLAGS.beam, beamfactor=FLAGS.beamfactor)
       elif FLAGS.interactive:
         g2p_model.interactive(c2c=FLAGS.c2c)
       elif len(FLAGS.evaluate) > 0:

@@ -28,6 +28,7 @@ import math
 import os
 import time
 import sys
+from heapq import heappush, heappop
 
 import numpy as np
 import tensorflow as tf
@@ -35,6 +36,7 @@ from tensorflow.core.protobuf import saver_pb2
 
 from g2p_seq2seq import data_utils
 from g2p_seq2seq import seq2seq_model
+from g2p_seq2seq.seq2seq_model import GO_ID
 
 from six.moves import xrange, input  # pylint: disable=redefined-builtin
 from six import text_type
@@ -75,9 +77,7 @@ class G2PModel(object):
     self.batch_size = 1 # We decode one word at a time.
     #Load model parameters.
     num_layers, size = data_utils.load_params(self.model_dir)
-    print("{} layers size {}".format(num_layers, size))
     # Load vocabularies
-    print("Loading vocabularies from %s" % self.model_dir)
     self.gr_vocab = data_utils.load_vocabulary(os.path.join(self.model_dir,
                                                             "vocab.grapheme"))
     self.ph_vocab = data_utils.load_vocabulary(os.path.join(self.model_dir,
@@ -335,7 +335,7 @@ class G2PModel(object):
 
 
 
-  def decode_word(self, word, c2c=False, aux=[], vocab=None):
+  def decode_word(self, word, c2c=False, aux=[], vocab=None, beam=1, beamfactor=1):
     """Decode input word to sequence of phonemes.
 
     Args:
@@ -343,6 +343,7 @@ class G2PModel(object):
       c2c: is it a character-to-character model?
       aux: other models to ensemble
       vocab: limiting vocabulary in a marisa_trie.Trie
+      beam: how many hypotheses to persist simultaneously?
 
     Returns:
       phonemes: decoded phoneme sequence for input word;
@@ -372,16 +373,21 @@ class G2PModel(object):
     bucket_id = min([b for b in xrange(len(self._BUCKETS))
                      if self._BUCKETS[b][0] > len(token_ids)])
     encoder_inputs, decoder_inputs, target_weights = self.model.get_batch(
-        {bucket_id: [(token_ids, [])]}, bucket_id)
+        {bucket_id: [(token_ids, [])]}, bucket_id, beam=beam)
 
     output = []
     joiner = "" if c2c else " "
     def _allowable(outvec, cand, joiner, vocab):
       # is the candidate allowable according to the vocab?
-      if cand == self.rev_ph_vocab[data_utils.EOS_ID]:
-        return joiner.join(outvec) in vocab
-      return len(vocab.keys(joiner.join(outvec+[cand]))) > 0
+      if cand == data_utils.EOS_ID:
+        return joiner.join(self.rev_ph_vocab[c] for c in outvec) in vocab
+      return len(vocab.keys(joiner.join(self.rev_ph_vocab[c] for c in outvec+[cand]))) > 0
+
+    histories = [[GO_ID]]*beam
+    weights = [[0.]]*beam
+    #print(len(decoder_inputs))
     for pos in range(len(decoder_inputs)):
+      #print("At position {}".format(pos))
       # concatenate all output_logits and get the mean
       logitstack = []
       _, _, output_logits = self.model.step(self.session, encoder_inputs,
@@ -393,63 +399,60 @@ class G2PModel(object):
                                                  decoder_inputs, target_weights,
                                                  bucket_id, True, automatic=False)
         logitstack.append(m2_output_logits[pos])
+      #print(logitstack)
       logits = np.mean(np.array(logitstack), axis=0)
+      # unsorted argmax_beam*beamfactor for each successor:
+      innerbeam = min(beam*beamfactor, logits.shape[1])
+      indices = np.argpartition(logits, -innerbeam)[:,-innerbeam:]
+      # unsorted vals to pair up with indices
+      maxvals = logits[np.matrix(range(indices.shape[0])).transpose(),indices]
 
-      maxval = np.max(logits)
-      oid = int(np.argmax(logits))
-      ochar = self.rev_ph_vocab[oid]
+      # candidates are previous sequence plus the new index, scoring previous score plus the new (log) score
+      def _fillheap(skipvocab): 
+        cands = []
+        for chist, whist, cgroup, wgroup in zip(histories, weights, indices, maxvals):
+          # no exploration from completed sequences allowed
+          if chist[-1] == data_utils.EOS_ID:
+            heappush(cands, (whist, chist))
+            continue
+          for c, w in zip(cgroup, wgroup):
+            if skipvocab or _allowable(chist[1:], c, joiner, vocab):
+              #print("adding {} and {}; concatenating {} and {}".format(whist, -np.log(w), str(chist), c))
+              heappush(cands, (whist+-np.log(w), chist+[c]))
+            # else:
+            #   print("skipping {} + {} for vocab".format(str(chist), c))
+          if pos == 0: # too much duplication first round
+            break
+        return cands
+      # if checking vocab and heap is too small, need to fall back on unchecked
+      if vocab is None:
+        cands = _fillheap(True)
+      else:
+        cands = _fillheap(False)
+        if len(cands) < beam:
+          sys.stderr.write("Could only put {} of {} items into heap; falling back to no vocab check at pos {}\n".format(len(cands), beam, pos))
+          cands = _fillheap(True)
 
-      # limit word to valid words 
-      # TODO: this will be vastly improved with a beam
-      if vocab is not None:
-        vals = sorted(enumerate(logits[0]), key=lambda i: i[1], reverse=True)[1:]
-        orig_mv = maxval
-        orig_oid = oid
-        orig_ochar = ochar
-        while len(vals) > 0 and not _allowable(output, ochar, joiner, vocab):
-          maxval = vals[0][1]
-          oid = vals[0][0]
-          ochar = self.rev_ph_vocab[oid]
-          vals = vals[1:]
-        if not _allowable(output, ochar, joiner, vocab):
-          maxval = orig_mv
-          oid = orig_oid
-          ochar = orig_ochar
-          sys.stderr.write("couldn't find legitimate continuation for {}\n".format(joiner.join(output)))
-          
-
-      # For beam decoding (TODO)
-      # runnersup = np.argpartition(logits[0], -4)[-4:]
-      # print(runnersup)
-      # for x, y in sorted(zip(runnersup, logits[0][runnersup]), key=lambda i: i[1], reverse=True):
-      #   print("  {} -> {} = {}".format(y, x, self.rev_ph_vocab[x].encode("utf-8")))
-      # for mn, auxm in enumerate(aux):
-      #   _, _, m2_output_logits = auxm.model.step(auxm.session, encoder_inputs,
-      #                                            decoder_inputs, target_weights,
-      #                                            bucket_id, True, automatic=False)
-      #   m2_maxval = np.max(m2_output_logits[pos])
-      #   m2_oid = int(np.argmax(m2_output_logits[pos]))
-      #   m2_ochar = auxm.rev_ph_vocab[m2_oid]
-      #   print("m{}: {} = {} -> {} = {}".format(mn, pos, m2_maxval, m2_oid, m2_ochar))
-      #   runnersup = np.argpartition(m2_output_logits[pos][0], -4)[-4:]
-      #   print(runnersup)
-      #   for x, y in sorted(zip(runnersup, m2_output_logits[pos][0][runnersup]), key=lambda i: i[1], reverse=True):
-      #     print("  m{}: {} -> {} = {}".format(mn, y, x, auxm.rev_ph_vocab[x].encode("utf-8")))
-      if oid == data_utils.EOS_ID:
+      for i in range(beam):
+        weight, cand = heappop(cands)
+        #print("{} : {} = {}".format(weight, cand, joiner.join([self.rev_ph_vocab[c] for c in cand[1:]]).encode("utf-8")))
+        histories[i] = cand
+        weights[i] = weight
+        if pos+1 < len(decoder_inputs):
+          for j, c in enumerate(cand):
+            decoder_inputs[j][i] = c
+      #for bn, (cand, weight) in enumerate(zip(histories, weights)):
+      #  print("{}:{} {}".format(bn, weight, joiner.join(self.rev_ph_vocab[c] for c in cand[1:])))
+      #print()
+      if histories[0][-1] == data_utils.EOS_ID:
         break
-      output.append(ochar)
-      if pos+1 < len(decoder_inputs):
-        decoder_inputs[pos+1][0]=oid
-    #print("got {}".format(''.join(manoutput)))
-      # run the step with automatic = false
-      # look at only the output position we are at; append the 
-      # feed that into the next position in decoder_inputs
-      
-
-    # Phoneme sequence corresponding to outputs.
-
-    retval = joiner.join(output)
-    # print("single model is {}".format(retval))
+    outputs = []
+    for cand in histories:
+      stop = -1 if cand[-1] == data_utils.EOS_ID else None
+      outputs.append(joiner.join(self.rev_ph_vocab[c] for c in cand[1:stop]))
+    retval = outputs[0]
+    # for on, output in enumerate(outputs):
+    #   print("{}:{} {}".format(on, weights[on], output.encode("utf-8")))
     return retval
 
 
@@ -502,7 +505,7 @@ class G2PModel(object):
     print("Accuracy: %.3f" % float(1-(errors/len(test_dic))))
 
 
-  def decode(self, decode_lines, output_file=None, c2c=False, aux=[], vocab=None):
+  def decode(self, decode_lines, output_file=None, c2c=False, aux=[], vocab=None, beam=1, beamfactor=1):
     """Decode words from file.
 
     Returns:
@@ -515,7 +518,7 @@ class G2PModel(object):
     if output_file:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab, beam=beam, beamfactor=beamfactor)
         output_file.write(word)
         output_file.write('\t')
         output_file.write(phonemes)
@@ -525,7 +528,7 @@ class G2PModel(object):
     else:
       for word in decode_lines:
         word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab)
+        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab, beam=beam, beamfactor=beamfactor)
         print(word + '\t' + phonemes)
         phoneme_lines.append(phonemes)
     return phoneme_lines
