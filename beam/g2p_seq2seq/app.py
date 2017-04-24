@@ -32,6 +32,24 @@ import argparse
 from marisa_trie import Trie
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
+reader = codecs.getreader('utf8')
+writer = codecs.getwriter('utf8')
+
+def prepfile(fh, code):
+  if type(fh) is str:
+    fh = open(fh, code)
+  ret = gzip.open(fh.name, code) if fh.name.endswith(".gz") else fh
+  if sys.version_info[0] == 2:
+    if code.startswith('r'):
+      ret = reader(fh)
+    elif code.startswith('w'):
+      ret = writer(fh)
+    else:
+      sys.stderr.write("I didn't understand code "+code+"\n")
+      sys.exit(1)
+  return ret
+
+
 # local priority
 import sys
 sys.path.insert(0, os.path.join(scriptdir, ".."))
@@ -64,12 +82,13 @@ parser.add_argument("--evaluate", type=str, default="", help="Count word error r
 parser.add_argument("--decode", type=str, default="", help="Decode file.")
 parser.add_argument("--beam", type=int, default=1, help="decoding beam")
 parser.add_argument("--beamfactor", type=int, default=1, help="beam*factor = successors to try per context; only useful when vocabulary limiting")
-parser.add_argument("--output", type=str, default="", help="Decoding result file.")
+parser.add_argument("--output", "-o", nargs='?', type=argparse.FileType('w'), default=sys.stdout, help="decoding output file")
 parser.add_argument("--train", type=str, default="", help="Train dictionary.")
 parser.add_argument("--valid", type=str, default="", help="Development dictionary.")
 parser.add_argument("--test", type=str, default="", help="Test dictionary.")
 parser.add_argument("--vocab", type=str, default="", help="Limiting vocabulary for decodes.")
 addonoffarg(parser, "logcount", default=False, help="use log count instead of plain counts")
+addonoffarg(parser, "showscore", default=False, help="show log prob in decodes")
 parser.add_argument("--max_steps", type=int, default=0, help="How many training steps to do until stop training (0: no limit).")
 addonoffarg(parser, "reinit", default=False, help="Set to True for training from scratch.")
 parser.add_argument("--optimizer", type=str, default="sgd", help="Optimizer type: sgd, adam, rms-prop. Default: sgd.")
@@ -109,10 +128,8 @@ def main(_=[]):
         vocab = Trie([x.strip() for x in codecs.open(FLAGS.vocab, "r", "utf-8").readlines()])
       if len(FLAGS.decode) > 0:
         decode_lines = codecs.open(FLAGS.decode, "r", "utf-8").readlines()
-        output_file = None
-        if len(FLAGS.output) > 0:
-          output_file = codecs.open(FLAGS.output, "w", "utf-8")
-        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models, vocab=vocab, beam=FLAGS.beam, beamfactor=FLAGS.beamfactor)
+        output_file = prepfile(FLAGS.output, 'w')
+        g2p_model.decode(decode_lines, output_file, c2c=FLAGS.c2c, aux=aux_models, vocab=vocab, beam=FLAGS.beam, beamfactor=FLAGS.beamfactor, showscore=FLAGS.showscore)
       elif FLAGS.interactive:
         g2p_model.interactive(c2c=FLAGS.c2c)
       elif len(FLAGS.evaluate) > 0:

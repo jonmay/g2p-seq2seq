@@ -352,7 +352,7 @@ class G2PModel(object):
     gr_absent = [gr for gr in word if gr not in self.gr_vocab]
     if gr_absent:
       print("Symbols '%s' are not in vocabulary" % "','".join(gr_absent).encode('utf-8'))
-      return ""
+      return "", 0.0
 
     for auxm in aux:
       gr2 = [gr for gr in word if gr not in auxm.gr_vocab]
@@ -375,7 +375,6 @@ class G2PModel(object):
     encoder_inputs, decoder_inputs, target_weights = self.model.get_batch(
         {bucket_id: [(token_ids, [])]}, bucket_id, beam=beam)
 
-    output = []
     joiner = "" if c2c else " "
     def _allowable(outvec, cand, joiner, vocab):
       # is the candidate allowable according to the vocab?
@@ -384,7 +383,7 @@ class G2PModel(object):
       return len(vocab.keys(joiner.join(self.rev_ph_vocab[c] for c in outvec+[cand]))) > 0
 
     histories = [[GO_ID]]*beam
-    weights = [[0.]]*beam
+    weights = [0.]*beam
     #print(len(decoder_inputs))
     for pos in range(len(decoder_inputs)):
       #print("At position {}".format(pos))
@@ -417,7 +416,7 @@ class G2PModel(object):
             continue
           for c, w in zip(cgroup, wgroup):
             if skipvocab or _allowable(chist[1:], c, joiner, vocab):
-              #print("adding {} and {}; concatenating {} and {}".format(whist, -np.log(w), str(chist), c))
+              #print("adding {} and {} = {}; concatenating {} and {}".format(whist, -np.log(w), whist+-np.log(w), str(chist), c))
               heappush(cands, (whist+-np.log(w), chist+[c]))
             # else:
             #   print("skipping {} + {} for vocab".format(str(chist), c))
@@ -433,6 +432,7 @@ class G2PModel(object):
           sys.stderr.write("Could only put {} of {} items into heap; falling back to no vocab check at pos {}\n".format(len(cands), beam, pos))
           cands = _fillheap(True)
 
+      # pop things off the heap and set up for next decoding step
       for i in range(beam):
         weight, cand = heappop(cands)
         #print("{} : {} = {}".format(weight, cand, joiner.join([self.rev_ph_vocab[c] for c in cand[1:]]).encode("utf-8")))
@@ -450,10 +450,9 @@ class G2PModel(object):
     for cand in histories:
       stop = -1 if cand[-1] == data_utils.EOS_ID else None
       outputs.append(joiner.join(self.rev_ph_vocab[c] for c in cand[1:stop]))
-    retval = outputs[0]
     # for on, output in enumerate(outputs):
     #   print("{}:{} {}".format(on, weights[on], output.encode("utf-8")))
-    return retval
+    return outputs[0], weights[0]
 
 
   def interactive(self, c2c=False):
@@ -468,7 +467,7 @@ class G2PModel(object):
         break
       if not word:
         break
-      print(self.decode_word(word, c2c=c2c))
+      print(self.decode_word(word, c2c=c2c)[0])
 
 
   def calc_error(self, dictionary, c2c=False):
@@ -476,7 +475,7 @@ class G2PModel(object):
     """
     errors = 0
     for word, pronunciations in dictionary.items():
-      hyp = self.decode_word(word, c2c=c2c)
+      hyp = self.decode_word(word, c2c=c2c)[0]
       if hyp not in pronunciations:
         errors += 1
     return errors
@@ -505,34 +504,22 @@ class G2PModel(object):
     print("Accuracy: %.3f" % float(1-(errors/len(test_dic))))
 
 
-  def decode(self, decode_lines, output_file=None, c2c=False, aux=[], vocab=None, beam=1, beamfactor=1):
+  def decode(self, decode_lines, output_file=None, c2c=False, aux=[], vocab=None, beam=1, beamfactor=1, showscore=False):
     """Decode words from file.
 
     Returns:
       if [--output output_file] pointed out, write decoded word sequences in
-      this file. Otherwise, print decoded words in standard output.
+      this file. Return to calling function, which is helpful for internal scoring
     """
-    phoneme_lines = []
-
-    # Decode from input file.
-    if output_file:
-      for word in decode_lines:
-        word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab, beam=beam, beamfactor=beamfactor)
-        output_file.write(word)
-        output_file.write('\t')
-        output_file.write(phonemes)
-        output_file.write('\n')
-        phoneme_lines.append(phonemes)
-      output_file.close()
-    else:
-      for word in decode_lines:
-        word = word.strip()
-        phonemes = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab, beam=beam, beamfactor=beamfactor)
-        print(word + '\t' + phonemes)
-        phoneme_lines.append(phonemes)
-    return phoneme_lines
-
+    for word in decode_lines:
+      word = word.strip()
+      phonemes, score = self.decode_word(word, c2c=c2c, aux=aux, vocab=vocab, beam=beam, beamfactor=beamfactor)
+      outdata = [word, phonemes]
+      if showscore:
+        outdata.append(str(score))
+      result = '\t'.join(outdata)+"\n"
+      if output_file:
+        output_file.write(result)
 
 class TrainingParams(object):
   """Class with training parameters."""
