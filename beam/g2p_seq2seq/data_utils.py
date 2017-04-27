@@ -99,7 +99,12 @@ def load_vocabulary(vocabulary_path, reverse=False):
   rev_vocab = []
   with codecs.open(vocabulary_path, "r", "utf-8") as vocab_file:
     rev_vocab.extend(vocab_file.readlines())
-  rev_vocab = [line.strip() for line in rev_vocab]
+  def _strip_but_allow_space(x):
+    y = x.strip()
+    if y == "":
+      y = " "
+    return y
+  rev_vocab = [_strip_but_allow_space(line) for line in rev_vocab]
   if reverse:
     return rev_vocab
   else:
@@ -258,7 +263,6 @@ def prepare_g2p_data(model_dir, train_path, valid_path, test_path, c2c=False, lo
   else:
     ph_vocab = create_vocabulary(train_ph)
     gr_vocab = create_vocabulary(train_gr)
-
     if model_dir:
       os.makedirs(model_dir)
       save_vocabulary(ph_vocab, os.path.join(model_dir, "vocab.phoneme"))

@@ -36,6 +36,10 @@ train=$datadir/train
 dev=$datadir/dev
 test=$datadir/test
 APP=$SCRIPTDIR/../beam/g2p_seq2seq/app.py
+scorer=$SCRIPTDIR/scorepair
+
+# in case language has path slashes
+langasname=$(echo $LANGUAGE | sed 's/\//_/g');
 
 vizstring=""
 for prefix in $REPS; do
@@ -50,22 +54,16 @@ for prefix in $REPS; do
     mkdir -p $decodedir
 
     python -u $APP --c2c --model $modeldir --decode <(cut -f1 $dev) --output $decodedir/dev.final &> $workdir/dev.log
-    num=`paste <(cut -f2 $dev) <(cut -f2 $decodedir/dev.final) | awk -F'\t' '$1==$2{print $1}' | wc -l`;
-    denom=`cat $dev | wc -l`;
-    echo "$num / $denom" > $decodedir/dev.score
-    echo "100.0 * $num.0 / $denom.0" | bc -l >> $decodedir/dev.score
+    $scorer $dev $decodedir/dev.final > $decodedir/dev.score
 
     python -u $APP --c2c --model $modeldir --decode <(cut -f1 $test) --output $decodedir/test.final &> $workdir/test.log
-    num=`paste <(cut -f2 $test) <(cut -f2 $decodedir/test.final) | awk -F'\t' '$1==$2{print $1}' | wc -l`;
-    denom=`cat $test | wc -l`;
-    echo "$num / $denom" > $decodedir/test.score
-    echo "100.0 * $num.0 / $denom.0" | bc -l >> $decodedir/test.score
+    $scorer $test $decodedir/test.final > $decodedir/test.score
 
-    $SCRIPTDIR/plotoutput.py -i $workdir/train.log -o $workdir/$LANGUAGE.pdf
+    $SCRIPTDIR/plotoutput.py -i $workdir/train.log -o $workdir/$langasname.pdf
     vizstring="$vizstring $workdir/train.log";
 done
 echo "$vizstring";
 vizdir=$SCRIPTDIR/../$LANGUAGE/viz
 echo $vizdir;
 mkdir -p $vizdir
-$SCRIPTDIR/plotoutput.py --no-legend -i $vizstring -o $vizdir/$LANGUAGE.$MODEL.pdf
+$SCRIPTDIR/plotoutput.py --no-legend -i $vizstring -o $vizdir/$langasname.$MODEL.pdf

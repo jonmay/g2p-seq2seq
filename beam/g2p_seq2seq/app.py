@@ -29,6 +29,7 @@ import codecs
 import tensorflow as tf
 import os.path
 import argparse
+import numpy as np
 from marisa_trie import Trie
 scriptdir = os.path.dirname(os.path.abspath(__file__))
 
@@ -73,6 +74,8 @@ parser.add_argument("--max_gradient_norm", type=float,default=5.0, help="Clip gr
 parser.add_argument("--dropout_keep_rate", type=float,default=1.0, help="probability of not dropping out.")
 parser.add_argument("--batch_size", type=int, default=64, help="Batch size to use during training.")
 parser.add_argument("--size", type=int, default=64, help="Size of each model layer.")
+parser.add_argument("--display_freq", type=int, default=1000, help="How often to display a demo decode during training.")
+parser.add_argument("--display_size", type=int, default=5, help="How many sentences to decode during training display.")
 parser.add_argument("--num_layers", type=int, default=2, help="Number of layers in the model.")
 parser.add_argument("--models", nargs='+', required=True, type=str, default=None, help="Training directory.")
 parser.add_argument("--steps_per_checkpoint", type=int, default=200, help="How many training steps to do per checkpoint.")
@@ -109,6 +112,7 @@ def main(_=[]):
       g2p_params = TrainingParams(FLAGS)
       if len(g2p_models) > 1:
         sys.stderr.write("Warning: can only train one model at a time; others will be ignored\n")
+      valid_lines = np.array(filter(lambda x: len(x.strip().split('\t')) < 40, codecs.open(FLAGS.valid, "r", "utf-8").readlines()))
       g2p_model.prepare_data(FLAGS.train, FLAGS.valid, FLAGS.test, FLAGS.c2c, FLAGS.logcount)
       if (not os.path.exists(os.path.join(FLAGS.models[0],
                                           "model.data-00000-of-00001"))
@@ -116,7 +120,7 @@ def main(_=[]):
         g2p_model.create_train_model(g2p_params)
       else:
         g2p_model.load_train_model(g2p_params)
-      g2p_model.train()
+      g2p_model.train(c2c=FLAGS.c2c, valid=valid_lines, dispfreq=FLAGS.display_freq, dispsize=FLAGS.display_size)
     else:
       g2p_model.load_decode_model(scope="mainmodel")
       aux_models = []

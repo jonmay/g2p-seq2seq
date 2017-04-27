@@ -63,7 +63,7 @@ class G2PModel(object):
   """
   # We use a number of buckets and pad to the closest one for efficiency.
   # See seq2seq_model.Seq2SeqModel for details of how they work.
-  _BUCKETS = [(5, 15), (10, 20), (40, 50), (70, 80)]
+  _BUCKETS = [(5, 15), (10, 20), (40, 50), (70, 80), (100, 150), (150, 200)]
 
   def __init__(self, model_dir):
     """Initialize model directory."""
@@ -193,6 +193,9 @@ class G2PModel(object):
     print("Reading model parameters from %s" % self.model_dir)
     self.model.saver.restore(self.session, os.path.join(self.model_dir,
                                                         "model"))
+    self.rev_ph_vocab =\
+      data_utils.load_vocabulary(os.path.join(self.model_dir, "vocab.phoneme"),
+                                 reverse=True)
 
 
   def create_train_model(self, params):
@@ -204,10 +207,15 @@ class G2PModel(object):
     self.__prepare_model(params)
 
     print("Created model with fresh parameters.")
+
+    self.rev_ph_vocab =\
+      data_utils.load_vocabulary(os.path.join(self.model_dir, "vocab.phoneme"),
+                                 reverse=True)
+
     self.session.run(tf.global_variables_initializer())
 
 
-  def train(self):
+  def train(self, c2c=False, valid=None, dispfreq=1000, dispsize=5):
     """Train a gr->ph translation model using G2P data."""
 
     train_bucket_sizes = [len(self.train_set[b])
@@ -236,6 +244,17 @@ class G2PModel(object):
       step_time += (time.time() - start_time) / self.params.steps_per_checkpoint
       train_loss += step_loss / self.params.steps_per_checkpoint
       current_step += 1
+
+      # once in a while we decode a sample
+      if current_step % dispfreq == 0 and valid is not None:
+        sub = np.random.choice(valid, size=dispsize, replace=False)
+        for ln, line in enumerate(sub):
+          src, ref = line.strip().split('\t')
+          mt, score = self.decode_word(src, c2c=c2c)
+          print("{}: Source = {}".format(ln, src.encode('utf-8')))
+          print("{}: Ref    = {}".format(ln, ref.encode('utf-8')))
+          print("{}: MT     = {}".format(ln, mt.encode('utf-8')))
+          print("{}: Score  = {}".format(ln, score).encode('utf-8'))
 
       # Once in a while, we save checkpoint, print statistics, and run evals.
       if current_step % self.params.steps_per_checkpoint == 0:
@@ -367,7 +386,7 @@ class G2PModel(object):
     # shrink if too long (and yell)
     if len(token_ids) > self._BUCKETS[-1][0]:
       trim = self._BUCKETS[-1][0]-1
-      print("%s is too long (%d); truncating to %d = %s" % (word, len(token_ids), trim, word[:trim]))
+      print("%s is too long (%d); truncating to %d = %s" % (word.encode('utf-8'), len(token_ids), trim, word[:trim].encode('utf-8')))
       token_ids = token_ids[:trim]
     # Which bucket does it belong to?
     bucket_id = min([b for b in xrange(len(self._BUCKETS))
